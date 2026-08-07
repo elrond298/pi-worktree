@@ -32,6 +32,27 @@ Pi cannot change its parent process working directory with `cd`. This extension 
 - Prunes stale workspaces: forgotten directories (jj can no longer resolve their root) and workspaces whose working copy commit was abandoned. Prune refuses when a stale workspace still holds uncommitted or conflicted changes, because forgetting would silently abandon them.
 - Reads state through `jj workspace list --ignore-working-copy -T ...`, so listing never snapshots or mutates the current working copy.
 
+## 🔄 Syncing upstream
+
+This repository vendors the package from the [narumiruna/pi-extensions](https://github.com/narumiruna/pi-extensions) monorepo (`packages/pi-worktree`), with the same files at the root plus local additions (jj support, standalone tooling). The `upstream` git remote tracks the monorepo; because the trees differ, a rebase cannot merge them, so changes are imported file by file:
+
+```bash
+node scripts/sync-upstream.mjs           # dry run: fetch + classify every file
+node scripts/sync-upstream.mjs --apply   # import safe upstream changes
+jj diff                                   # review
+jj describe -m "sync: import upstream changes" && jj git push
+```
+
+Per file, the script classifies:
+
+- **same** — already matches upstream; nothing to do.
+- **update** — upstream changed the file since the version we vendored, and our local copy still equals that vendored version (we never touched it) → imported automatically.
+- **new** — upstream added the file → imported automatically.
+- **diverged** — our local copy matches no upstream version (we edited it, e.g. `src/command.ts`, `package.json`, tests) → reported for a manual merge, never overwritten.
+- **deleted** — upstream removed a file we still carry → reported, left in place.
+
+Local-only files (`src/jj.ts`, the jj tests, `scripts/`, `biome.json`, ...) are never touched. Set `UPSTREAM_REF` to sync from a different upstream ref than `main`.
+
 ## 📦 Install
 
 ```bash
