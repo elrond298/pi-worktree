@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import type { ExecResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { pathIdentity, pathsEqual, stripTerminalControls } from "./git.js";
@@ -243,7 +243,24 @@ export async function addJjWorkspace(
 	input: JjAddArguments,
 	signal?: AbortSignal,
 ): Promise<void> {
+	ensureParentDirectory(input.path);
 	await runJj(pi, buildJjAddArguments(input), cwd, signal, JJ_MUTATION_TIMEOUT_MS);
+}
+
+/**
+ * Unlike `git worktree add`, `jj workspace add` requires the destination's
+ * parent directory to already exist and fails with "Cannot access" otherwise.
+ * Create the parent chain so the default ~/.worktrees/<project>/<name>
+ * suggestions work on first use, matching Git's implicit directory creation.
+ */
+function ensureParentDirectory(targetPath: string): void {
+	try {
+		mkdirSync(dirname(targetPath), { recursive: true });
+	} catch (error) {
+		throw new JjWorkspaceError(
+			`Cannot create the parent directory of the new workspace: ${formatError(error)}`,
+		);
+	}
 }
 
 export async function forgetJjWorkspaces(

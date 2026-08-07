@@ -97,8 +97,7 @@ The MVP does not expose `--force`, `-B`, `--detach`, `--orphan`, or lock options
 
 In a jj repository the Add flow asks for an optional workspace name, an optional start point, and the destination path. A blank name lets jj derive it from the destination directory name. A blank start point uses jj's native default: the new workspace's working copy commit is created on top of the parent of the current change, so uncommitted work stays in the current workspace. A provided start point must resolve to exactly one commit, mirroring the Git flow's single-commit rule. The suggestion is `~/.worktrees/<repo-root-workspace-name>/<name>` (or `/workspace` when no name was given).
 
-The extension never deletes a directory it did not create: `jj workspace add` may accept an existing empty directory, but this extension still requires the target to not exist, matching the Git flow's stricter preflight.
-
+`jj workspace add` requires the destination's parent directory to already exist (it fails with "Cannot access ..." otherwise), so the extension creates the parent chain before invoking jj, matching `git worktree add`'s implicit directory creation. The extension never deletes a directory it did not create: `jj workspace add` may accept an existing empty directory, but this extension still requires the target to not exist, matching the Git flow's stricter preflight.
 ## ⚙️ Worktree root settings
 
 The machine-local user settings file is:

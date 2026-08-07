@@ -86,6 +86,25 @@ test("jj service lists, adds, switches into, and forgets workspaces in a real re
 	}
 });
 
+test("jj service creates missing parent directories like git worktree add", {
+	skip: jjAvailable ? false : "jj is not installed",
+}, async () => {
+	const temporary = realpathSync(mkdtempSync(join(tmpdir(), "pi-worktree-jj-parent-integration-")));
+	const main = join(temporary, "main");
+	const nested = join(temporary, ".worktrees", "project", "test1");
+	try {
+		jj(temporary, ["git", "init", "--colocate", main]);
+		jj(main, ["describe", "-m", "main change"]);
+
+		// The suggested ~/.worktrees/<project>/<name> parent does not exist yet.
+		await addJjWorkspace(pi, main, { path: nested, name: "test1" });
+		const records = await listJjWorkspaces(pi, main);
+		assert.ok(records.some((record) => record.name === "test1" && record.path === nested));
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+});
+
 test("jj service reports missing roots as stale and forgets them safely", {
 	skip: jjAvailable ? false : "jj is not installed",
 }, async () => {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -343,6 +343,26 @@ test("resolveJjRevision requires exactly one well-formed commit id", async () =>
 		),
 		/invalid commit object/i,
 	);
+});
+
+test("addJjWorkspace creates a missing parent chain before emitting argv", async () => {
+	const temporary = realpathSync(mkdtempSync(join(tmpdir(), "pi-worktree-jj-parent-")));
+	const nested = join(temporary, "a", "b", "workspace");
+	const calls: string[][] = [];
+	const pi = {
+		exec: async (_command: string, args: string[]) => {
+			calls.push(args);
+			return execResult();
+		},
+	};
+	try {
+		await addJjWorkspace(pi, temporary, { path: nested });
+		assert.deepEqual(calls, [["workspace", "add", nested]]);
+		assert.equal(existsSync(join(temporary, "a", "b")), true);
+		assert.equal(existsSync(nested), false);
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
 });
 
 test("addJjWorkspace and forgetJjWorkspaces emit argv-only mutations", async () => {
