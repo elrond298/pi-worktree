@@ -4,13 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ExecResult } from "@earendil-works/pi-coding-agent";
-import {
-	createCustomSelectorHarness,
-	createMockContext,
-	createMockPi,
-} from "../../../test/support.js";
 import { createWorktreeSettingsRuntime, type WorktreeSettingsRuntime } from "../src/settings.js";
 import worktreeExtension from "../src/worktree.js";
+import { createCustomSelectorHarness, createMockContext, createMockPi } from "./support.js";
 
 const oid = "0123456789abcdef0123456789abcdef01234567";
 

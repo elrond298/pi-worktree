@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { createMockContext } from "../../../test/support.js";
 import { switchToWorktree } from "../src/session.js";
+import { createMockContext } from "./support.js";
 
 function assistant(text: string) {
 	return {

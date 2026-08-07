@@ -1,13 +1,14 @@
-# 🌳 pi-worktree — Safe Git Worktree Management for Pi
+# 🌳 pi-worktree — Safe Git Worktree and Jujutsu Workspace Management for Pi
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-worktree)](https://www.npmjs.com/package/@narumitw/pi-worktree) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-`@narumitw/pi-worktree` adds one interactive `/worktree` command for common Git worktree operations and Pi workspace switching.
+`@narumitw/pi-worktree` adds one interactive `/worktree` command for common Git worktree and Jujutsu workspace operations and Pi workspace switching.
 
-Pi cannot change its parent process working directory with `cd`. This extension performs the safe equivalent: it prepares a Pi session whose cwd is the selected worktree and switches to that session, preserving the current conversation when it has already been persisted.
+Pi cannot change its parent process working directory with `cd`. This extension performs the safe equivalent: it prepares a Pi session whose cwd is the selected worktree or jj workspace and switches to that session, preserving the current conversation when it has already been persisted.
 
 ## ✨ Features
 
+- One command for both VCS families: inside a Jujutsu repo (`jj`), `/worktree` manages jj workspaces; everywhere else it manages Git worktrees.
 - Shows compact main, linked, current, detached, locked, and prunable state in worktree selectors.
 - Creates a new branch worktree or attaches an existing unoccupied local branch.
 - Rejects occupied targets and unresolvable symbolic-link ancestors before Git can create a branch.
@@ -19,7 +20,17 @@ Pi cannot change its parent process working directory with `cd`. This extension 
 - Allows ignored-only data such as `node_modules/` after listing it in the destructive confirmation.
 - Names recovery-only administrative commits in the destructive confirmation instead of making ordinary rebase/reset history block cleanup forever.
 - Always previews stale metadata before pruning it and revalidates the preview after confirmation.
-- Runs Git through argv-based subprocess calls, without interpolating user input into shell commands.
+- Runs Git and jj through argv-based subprocess calls, without interpolating user input into shell commands.
+
+### Jujutsu workspace support
+
+- Detects jj workspaces by walking ancestors for `.jj`; colocated repositories are managed as jj workspaces because jj owns their workspace layout.
+- Lists every workspace with its root path, change id, dirty/conflicted/abandoned working copy state, and current/main markers.
+- Creates a workspace at a chosen path with an optional name and an optional start point (default: the parent of the current change, matching `jj workspace add`).
+- Switches Pi among registered workspaces, refusing abandoned working copies and missing roots.
+- Removes (forgets) only clean, non-current, non-main workspaces. `jj workspace forget` never deletes directories, so the directory is always retained on disk.
+- Prunes stale workspaces: forgotten directories (jj can no longer resolve their root) and workspaces whose working copy commit was abandoned. Prune refuses when a stale workspace still holds uncommitted or conflicted changes, because forgetting would silently abandon them.
+- Reads state through `jj workspace list --ignore-working-copy -T ...`, so listing never snapshots or mutates the current working copy.
 
 ## 📦 Install
 
@@ -48,12 +59,12 @@ Run the command without arguments:
 /worktree
 ```
 
-Choose one action:
+Choose one action (labels use *workspace* wording inside jj repositories):
 
-- **Add worktree** — enter a branch, optional start point, and optional path; confirm creation and optionally switch.
-- **Switch worktree** — select another existing worktree and continue this Pi conversation there.
-- **Remove worktree** — remove a linked worktree without deleting its branch; ignored-only data is listed for explicit confirmation.
-- **Prune stale metadata** — inspect Git's dry-run output, then optionally run the matching prune.
+- **Add worktree / workspace** — for Git: enter a branch, optional start point, and optional path; confirm creation and optionally switch. For jj: enter an optional workspace name, an optional start point, and a path.
+- **Switch worktree / workspace** — select another existing worktree or workspace and continue this Pi conversation there.
+- **Remove worktree / workspace** — Git: remove a linked worktree without deleting its branch; ignored-only data is listed for explicit confirmation. jj: forget a clean workspace; its directory is retained.
+- **Prune stale metadata / workspaces** — Git: inspect `git worktree prune --dry-run --verbose`, then optionally prune. jj: preview stale workspaces (missing roots or abandoned working copies), then forget them together.
 - **Configure worktree root** — set a machine-local default root or submit a blank value to restore `~/.worktrees`.
 
 The standard root menu shows the registered count, current path, effective worktree root, its source,
@@ -81,6 +92,12 @@ On Windows, the equivalent default is such as `C:\Users\Alice\.worktrees`. Branc
 Leave the path input blank to accept the suggestion. A custom absolute path is used directly; a custom relative path is resolved from the current Pi cwd. The target itself must not exist, and its nearest existing ancestor must resolve without a broken or looping symbolic link. Existing registered worktrees are never moved when this default changes.
 
 The MVP does not expose `--force`, `-B`, `--detach`, `--orphan`, or lock options.
+
+### Jujutsu add flow
+
+In a jj repository the Add flow asks for an optional workspace name, an optional start point, and the destination path. A blank name lets jj derive it from the destination directory name. A blank start point uses jj's native default: the new workspace's working copy commit is created on top of the parent of the current change, so uncommitted work stays in the current workspace. A provided start point must resolve to exactly one commit, mirroring the Git flow's single-commit rule. The suggestion is `~/.worktrees/<repo-root-workspace-name>/<name>` (or `/workspace` when no name was given).
+
+The extension never deletes a directory it did not create: `jj workspace add` may accept an existing empty directory, but this extension still requires the target to not exist, matching the Git flow's stricter preflight.
 
 ## ⚙️ Worktree root settings
 
@@ -131,11 +148,21 @@ A successfully created Git worktree is never rolled back merely because Pi sessi
 - Prune always runs `git worktree prune --dry-run --verbose` before confirmation, inspects candidates omitted from porcelain, rechecks the exact preview and recovery-risk set after confirmation, and uses Git's default expiry. Remove likewise rechecks worktree identity, inventory, administrative path, and the approved recovery-risk set before mutation.
 - The extension does not commit, push, rebase, repair, move, lock, or unlock worktrees.
 
-Use Git directly when you intentionally need force removal, branch deletion, custom prune expiry, detach/orphan creation, move, repair, lock, or unlock behavior.
+### Jujutsu workspace boundaries
 
+- The current workspace and the workspace containing the jj repository (the jj analogue of the main worktree) cannot be removed.
+- `jj workspace forget` silently abandons the workspace's working copy commit even when it contains uncommitted changes, so Remove only offers workspaces whose working copy commit is empty, visible, and conflict-free.
+- Prune only forgets stale workspaces (missing root or abandoned working copy commit). A stale workspace whose working copy commit still holds uncommitted or conflicted changes blocks the whole prune, because forgetting would make those changes unreachable; preserve them with jj first.
+- Remove and prune re-list the workspaces and recheck name, path, change id, commit id, and working copy state after confirmation; any change refuses the mutation.
+- Forgetting never deletes files: jj has no remove-with-directory operation, so the workspace directory is always retained and reported in the success notification. Use `jj workspace forget` or your shell directly if you also want to delete the directory.
+- All reads use `--ignore-working-copy` so listing never snapshots the current working copy; only Add performs a normal jj operation that may snapshot it.
+- The extension never invokes a shell and never interpolates user input into jj argv.
+
+Use Git or jj directly when you intentionally need force removal, branch deletion, custom prune expiry, detach/orphan creation, move, repair, lock, or unlock behavior.
 ## Requirements and limits
 
-- Git must be installed and the current Pi cwd must be inside a non-bare Git worktree.
+- Git worktree mode: Git must be installed and the current Pi cwd must be inside a non-bare Git worktree.
+- Jujutsu workspace mode: `jj` must be installed and the current Pi cwd must be inside a jj workspace (any ancestor with a `.jj` directory). The workspace root is re-detected on every command run, so linked workspaces work from anywhere inside them.
 - The command requires a UI-capable Pi mode; print and JSON modes cannot drive its dialogs.
 - Project trust and cwd-bound extension/resource loading during a switch remain owned by Pi.
 - The extension registers no LLM tool, background watcher, project settings, or statusline item.
@@ -148,6 +175,7 @@ packages/pi-worktree/
 │   ├── index.ts
 │   ├── command.ts
 │   ├── git.ts
+│   ├── jj.ts
 │   ├── session.ts
 │   ├── settings.ts
 │   └── worktree.ts
@@ -155,6 +183,9 @@ packages/pi-worktree/
 │   ├── command.test.ts
 │   ├── git.integration.test.ts
 │   ├── git.test.ts
+│   ├── jj-command.test.ts
+│   ├── jj.integration.test.ts
+│   ├── jj.test.ts
 │   ├── remove-ignored-command.test.ts
 │   ├── session.test.ts
 │   └── settings.test.ts
@@ -166,7 +197,7 @@ packages/pi-worktree/
 
 ## 🏷️ Keywords
 
-`pi-package`, `pi-extension`, `git`, `worktree`, `workspace`, `session`
+`pi-package`, `pi-extension`, `git`, `worktree`, `workspace`, `jj`, `jujutsu`, `session`
 
 ## 📄 License
 

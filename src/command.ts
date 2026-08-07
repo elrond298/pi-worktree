@@ -29,6 +29,20 @@ import {
 	worktreeForBranch,
 	worktreeInventory,
 } from "./git.js";
+import {
+	addJjWorkspace,
+	currentJjWorkspaceRoot,
+	defaultJjWorkspacePath,
+	detectVcs,
+	forgetJjWorkspaces,
+	formatJjWorkspace,
+	type JjWorkspaceRecord,
+	jjRepoRoot,
+	listJjWorkspaces,
+	resolveJjRevision,
+	sameJjWorkspaceIdentity,
+	validateJjWorkspaceName,
+} from "./jj.js";
 import { switchToWorktree } from "./session.js";
 import type { WorktreeSettingsRuntime } from "./settings.js";
 
@@ -45,6 +59,22 @@ const ACTIONS = {
 	configure: ACTION_CONFIGURE_ROOT,
 } as const;
 
+const MENU_ACTION_LABELS = {
+	git: {
+		add: ACTION_ADD,
+		switch: ACTION_SWITCH,
+		remove: ACTION_REMOVE,
+		prune: ACTION_PRUNE,
+		configure: ACTION_CONFIGURE_ROOT,
+	},
+	jj: {
+		add: "Add workspace",
+		switch: "Switch workspace",
+		remove: "Remove workspace",
+		prune: "Prune stale workspaces",
+		configure: "Configure workspace root",
+	},
+} as const;
 interface WorktreeMenuOwner {
 	signal: AbortSignal;
 	isCurrent(): boolean;
@@ -61,7 +91,7 @@ export function registerWorktreeCommand(
 	getMenuOwner: () => WorktreeMenuOwner,
 ): void {
 	pi.registerCommand("worktree", {
-		description: "Interactively manage Git worktrees and their default root",
+		description: "Interactively manage Git worktrees and Jujutsu workspaces and their default root",
 		handler: async (args, ctx) => {
 			if (args.trim()) {
 				safeNotify(
@@ -77,58 +107,11 @@ export function registerWorktreeCommand(
 			}
 
 			try {
-				await ctx.waitForIdle();
-				const records = await listWorktrees(pi, ctx.cwd, ctx.signal);
-				const currentPath = await currentWorktreePath(pi, ctx.cwd, ctx.signal);
-				const root = settings.get();
-				const warning = root.warning ? " — settings warning" : "";
-				const owner = getMenuOwner();
-				const { defineMenu, runMenu } = await import("@narumitw/pi-tui-kit");
-				if (owner.signal.aborted || !owner.isCurrent()) return;
-				const runFlow = async (flow: () => Promise<void>) => {
-					try {
-						await flow();
-					} catch (error) {
-						safeNotify(ctx, formatError(error), "error");
-					}
-					return { kind: "close" } as const;
-				};
-				type Screen = "main";
-				type Action = keyof typeof ACTIONS;
-				const menu = defineMenu<undefined, Screen, Action, ExtensionCommandContext>({
-					start: "main",
-					screens: {
-						main: () => ({
-							kind: "actions",
-							title: "Git worktrees",
-							lines: [
-								`Registered: ${records.length}`,
-								`Current: ${currentPath}`,
-								`Worktree root: ${root.effectiveRoot} (${root.source})${warning}`,
-							],
-							items: Object.entries(ACTIONS).map(([id, label]) => ({
-								id,
-								label,
-								action: id as Action,
-							})),
-							hint: "close",
-						}),
-					},
-					actions: {
-						add: async () => runFlow(() => addFlow(pi, ctx, records, root.effectiveRoot)),
-						switch: async ({ signal }) =>
-							runFlow(() => switchFlow(pi, ctx, records, currentPath, signal)),
-						remove: async ({ signal }) =>
-							runFlow(() => removeFlow(pi, ctx, records, currentPath, signal)),
-						prune: async () => runFlow(() => pruneFlow(pi, ctx, records)),
-						configure: async () => runFlow(() => configureRootFlow(ctx, settings)),
-					},
-				});
-				await runMenu(ctx, menu, {
-					getState: () => undefined,
-					signal: owner.signal,
-					isCurrent: owner.isCurrent,
-				});
+				if (detectVcs(ctx.cwd) === "jj") {
+					await jjMenuFlow(pi, ctx, settings, getMenuOwner);
+					return;
+				}
+				await gitMenuFlow(pi, ctx, settings, getMenuOwner);
 			} catch (error) {
 				safeNotify(ctx, formatError(error), "error");
 			}
@@ -136,9 +119,132 @@ export function registerWorktreeCommand(
 	});
 }
 
+async function gitMenuFlow(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	settings: WorktreeSettingsRuntime,
+	getMenuOwner: () => WorktreeMenuOwner,
+): Promise<void> {
+	await ctx.waitForIdle();
+	const records = await listWorktrees(pi, ctx.cwd, ctx.signal);
+	const currentPath = await currentWorktreePath(pi, ctx.cwd, ctx.signal);
+	const root = settings.get();
+	const warning = root.warning ? " — settings warning" : "";
+	const owner = getMenuOwner();
+	const { defineMenu, runMenu } = await import("@narumitw/pi-tui-kit");
+	if (owner.signal.aborted || !owner.isCurrent()) return;
+	const runFlow = async (flow: () => Promise<void>) => {
+		try {
+			await flow();
+		} catch (error) {
+			safeNotify(ctx, formatError(error), "error");
+		}
+		return { kind: "close" } as const;
+	};
+	type Screen = "main";
+	type Action = keyof typeof ACTIONS;
+	const menu = defineMenu<undefined, Screen, Action, ExtensionCommandContext>({
+		start: "main",
+		screens: {
+			main: () => ({
+				kind: "actions",
+				title: "Git worktrees",
+				lines: [
+					`Registered: ${records.length}`,
+					`Current: ${currentPath}`,
+					`Worktree root: ${root.effectiveRoot} (${root.source})${warning}`,
+				],
+				items: Object.entries(MENU_ACTION_LABELS.git).map(([id, label]) => ({
+					id,
+					label,
+					action: id as Action,
+				})),
+				hint: "close",
+			}),
+		},
+		actions: {
+			add: async () => runFlow(() => addFlow(pi, ctx, records, root.effectiveRoot)),
+			switch: async ({ signal }) =>
+				runFlow(() => switchFlow(pi, ctx, records, currentPath, signal)),
+			remove: async ({ signal }) =>
+				runFlow(() => removeFlow(pi, ctx, records, currentPath, signal)),
+			prune: async () => runFlow(() => pruneFlow(pi, ctx, records)),
+			configure: async () => runFlow(() => configureRootFlow(ctx, settings, "Worktree root")),
+		},
+	});
+	await runMenu(ctx, menu, {
+		getState: () => undefined,
+		signal: owner.signal,
+		isCurrent: owner.isCurrent,
+	});
+}
+
+async function jjMenuFlow(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	settings: WorktreeSettingsRuntime,
+	getMenuOwner: () => WorktreeMenuOwner,
+): Promise<void> {
+	await ctx.waitForIdle();
+	const records = await listJjWorkspaces(pi, ctx.cwd, ctx.signal);
+	const currentPath = await currentJjWorkspaceRoot(pi, ctx.cwd, ctx.signal);
+	const mainRoot = jjRepoRoot(ctx.cwd);
+	const root = settings.get();
+	const warning = root.warning ? " — settings warning" : "";
+	const owner = getMenuOwner();
+	const { defineMenu, runMenu } = await import("@narumitw/pi-tui-kit");
+	if (owner.signal.aborted || !owner.isCurrent()) return;
+	const runFlow = async (flow: () => Promise<void>) => {
+		try {
+			await flow();
+		} catch (error) {
+			safeNotify(ctx, formatError(error), "error");
+		}
+		return { kind: "close" } as const;
+	};
+	type Screen = "main";
+	type Action = keyof typeof ACTIONS;
+	const menu = defineMenu<undefined, Screen, Action, ExtensionCommandContext>({
+		start: "main",
+		screens: {
+			main: () => ({
+				kind: "actions",
+				title: "Jj workspaces",
+				lines: [
+					`Registered: ${records.length}`,
+					`Current: ${currentPath}`,
+					`Workspace root: ${root.effectiveRoot} (${root.source})${warning}`,
+				],
+				items: Object.entries(MENU_ACTION_LABELS.jj).map(([id, label]) => ({
+					id,
+					label,
+					action: id as Action,
+				})),
+				hint: "close",
+			}),
+		},
+		actions: {
+			add: async () =>
+				runFlow(() => jjAddFlow(pi, ctx, records, root.effectiveRoot, currentPath, mainRoot)),
+			switch: async ({ signal }) =>
+				runFlow(() => jjSwitchFlow(pi, ctx, records, currentPath, signal)),
+			remove: async ({ signal }) =>
+				runFlow(() => jjRemoveFlow(pi, ctx, records, currentPath, mainRoot, signal)),
+			prune: async () => runFlow(() => jjPruneFlow(pi, ctx)),
+			configure: async () => runFlow(() => configureRootFlow(ctx, settings, "Workspace root")),
+		},
+	});
+	await runMenu(ctx, menu, {
+		getState: () => undefined,
+		signal: owner.signal,
+		isCurrent: owner.isCurrent,
+	});
+}
+
 async function configureRootFlow(
 	ctx: ExtensionCommandContext,
 	settings: WorktreeSettingsRuntime,
+	settingsLabel: string,
 ): Promise<void> {
 	const current = await settings.reload();
 	if (!current.canSave) {
@@ -147,7 +253,7 @@ async function configureRootFlow(
 		);
 	}
 	const requested = await ctx.ui.input(
-		"Worktree root (blank restores ~/.worktrees)",
+		`${settingsLabel} (blank restores ~/.worktrees)`,
 		stripTerminalControls(current.configuredRoot ?? current.effectiveRoot),
 	);
 	if (requested === undefined) return;
@@ -466,6 +572,266 @@ async function pruneFlow(
 	);
 }
 
+async function jjAddFlow(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	records: readonly JjWorkspaceRecord[],
+	workspaceRoot: string,
+	currentPath: string,
+	mainRoot: string | undefined,
+): Promise<void> {
+	if (records.length === 0) throw new Error("jj returned no registered workspaces.");
+	const suggestionBase = mainRoot ?? currentPath;
+
+	const requestedName = await ctx.ui.input(
+		"Workspace name (blank uses the destination directory name)",
+		"my-change",
+	);
+	if (requestedName === undefined) return;
+	const nameInput = requestedName.trim();
+	const name = nameInput === "" ? undefined : validateJjWorkspaceName(nameInput);
+	if (name !== undefined && records.some((record) => record.name === name)) {
+		throw new Error(`A workspace named ${name} already exists.`);
+	}
+
+	const requestedStart = await ctx.ui.input(
+		"Start point (blank uses the parent of the current change)",
+		"@-",
+	);
+	if (requestedStart === undefined) return;
+	const startInput = requestedStart.trim();
+	const startCommit =
+		startInput === "" ? undefined : await resolveJjRevision(pi, ctx.cwd, startInput, ctx.signal);
+
+	const suggestedPath = defaultJjWorkspacePath(suggestionBase, name ?? "workspace", workspaceRoot);
+	const requestedPath = await ctx.ui.input(
+		stripTerminalControls(`Workspace path (blank uses ${suggestedPath})`),
+		stripTerminalControls(suggestedPath),
+	);
+	if (requestedPath === undefined) return;
+	const targetPath = pathIdentity(
+		requestedPath.trim() ? resolve(ctx.cwd, requestedPath.trim()) : suggestedPath,
+	);
+	assertTargetFilesystemAvailable(targetPath);
+	const pathCollision = records.find(
+		(record) => record.path !== undefined && pathsEqual(record.path, targetPath),
+	);
+	if (pathCollision) {
+		throw new Error(`The target path is already registered as a workspace: ${pathCollision.path}.`);
+	}
+
+	const summary =
+		startInput === ""
+			? `Create jj workspace at ${targetPath}?`
+			: `Create jj workspace at ${targetPath} from ${startInput}?`;
+	if (!(await ctx.ui.confirm("Create jj workspace", stripTerminalControls(summary)))) return;
+
+	assertTargetFilesystemAvailable(targetPath);
+	await addJjWorkspace(
+		pi,
+		ctx.cwd,
+		{
+			path: targetPath,
+			...(name === undefined ? {} : { name }),
+			...(startCommit === undefined ? {} : { startCommit }),
+		},
+		ctx.signal,
+	);
+	let created: JjWorkspaceRecord;
+	try {
+		const updated = await listJjWorkspaces(pi, ctx.cwd, ctx.signal);
+		const verified = updated.find(
+			(record) => record.path !== undefined && pathsEqual(record.path, targetPath),
+		);
+		if (!verified) {
+			throw new Error("the expected path was not present in jj workspace list output");
+		}
+		created = verified;
+	} catch (error) {
+		throw new Error(
+			`jj add completed, so the workspace was retained at ${targetPath}, but verification failed: ${formatError(error)}. Inspect jj workspace list before retrying.`,
+		);
+	}
+	safeNotify(ctx, `Created jj workspace ${created.name} at ${targetPath}.`, "info");
+
+	if (
+		await ctx.ui.confirm(
+			"Switch Pi workspace?",
+			stripTerminalControls(`Continue this conversation in ${targetPath}?`),
+		)
+	) {
+		const latest = await revalidateJjWorkspaceIdentity(pi, ctx, created);
+		if (latest.path === undefined || latest.abandoned || !existsSync(latest.path)) {
+			throw new Error("The newly created workspace became unavailable; select it again.");
+		}
+		await switchToWorktree(ctx, latest.path);
+	}
+}
+
+async function jjSwitchFlow(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	records: readonly JjWorkspaceRecord[],
+	currentPath: string,
+	signal?: AbortSignal,
+): Promise<void> {
+	const candidates = records.filter(
+		(record) =>
+			record.path !== undefined &&
+			!record.abandoned &&
+			existsSync(record.path) &&
+			!pathsEqual(record.path, currentPath),
+	);
+	const selected = await selectJjWorkspace(
+		ctx,
+		"Switch to workspace",
+		candidates,
+		currentPath,
+		signal,
+	);
+	if (!selected) return;
+	const latest = await revalidateJjWorkspaceIdentity(pi, ctx, selected);
+	if (
+		latest.path === undefined ||
+		latest.abandoned ||
+		!existsSync(latest.path) ||
+		pathsEqual(latest.path, currentPath)
+	) {
+		throw new Error("The selected workspace changed state; select it again.");
+	}
+	await switchToWorktree(ctx, latest.path);
+}
+
+async function jjRemoveFlow(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	records: readonly JjWorkspaceRecord[],
+	currentPath: string,
+	mainRoot: string | undefined,
+	signal?: AbortSignal,
+): Promise<void> {
+	const candidates = records.filter(
+		(record) =>
+			record.path !== undefined &&
+			!record.abandoned &&
+			record.empty &&
+			!record.conflict &&
+			!pathsEqual(record.path, currentPath) &&
+			mainRoot !== undefined &&
+			!pathsEqual(record.path, mainRoot),
+	);
+	const selected = await selectJjWorkspace(
+		ctx,
+		"Remove workspace",
+		candidates,
+		currentPath,
+		signal,
+	);
+	if (!selected) return;
+	const selectedPath = selected.path;
+	if (
+		!(await ctx.ui.confirm(
+			"Remove jj workspace",
+			stripTerminalControls(
+				`Forget the jj workspace ${selected.name} at ${selectedPath}? Its working copy commit is empty, so no changes are lost. jj never deletes directories; ${selectedPath} will be retained on disk.`,
+			),
+		))
+	) {
+		return;
+	}
+	const latest = await revalidateJjWorkspaceIdentity(pi, ctx, selected);
+	if (
+		latest.path === undefined ||
+		latest.abandoned ||
+		!latest.empty ||
+		latest.conflict ||
+		pathsEqual(latest.path, currentPath) ||
+		(mainRoot !== undefined && pathsEqual(latest.path, mainRoot))
+	) {
+		throw new Error(
+			`Workspace ${selected.name} changed state after confirmation; removal was refused.`,
+		);
+	}
+	await forgetJjWorkspaces(pi, ctx.cwd, [latest.name], ctx.signal);
+	const updated = await listJjWorkspaces(pi, ctx.cwd, ctx.signal);
+	if (updated.some((record) => record.name === latest.name)) {
+		throw new Error(`jj forget returned success, but ${latest.name} is still registered.`);
+	}
+	safeNotify(
+		ctx,
+		`Removed jj workspace ${latest.name}. Its directory was retained at ${latest.path}.`,
+		"info",
+	);
+}
+
+async function jjPruneFlow(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
+	const latest = await listJjWorkspaces(pi, ctx.cwd, ctx.signal);
+	const stale = latest.filter((record) => record.abandoned || record.path === undefined);
+	const blocked = stale.filter((record) => !record.abandoned && (!record.empty || record.conflict));
+	if (blocked.length > 0) {
+		throw new Error(
+			`Prune refused because ${blocked.map((record) => record.name).join(", ")} ${blocked.length === 1 ? "has" : "have"} uncommitted or conflicted changes in ${blocked.length === 1 ? "its" : "their"} working copy commit. Preserve them with jj before forgetting ${blocked.length === 1 ? "the workspace" : "these workspaces"}.`,
+		);
+	}
+	const candidates = stale.filter(
+		(record) => record.abandoned || (record.empty && !record.conflict),
+	);
+	if (candidates.length === 0) {
+		ctx.ui.notify("jj found no stale workspaces to prune.", "info");
+		return;
+	}
+	const preview = candidates
+		.map((record) =>
+			record.abandoned
+				? `${formatJjWorkspace(record)} (working copy commit already abandoned; nothing new is discarded)`
+				: `${formatJjWorkspace(record)} (empty working copy commit will be forgotten)`,
+		)
+		.join("\n");
+	ctx.ui.notify(`jj workspace forget preview\n${preview}`, "warning");
+	if (
+		!(await ctx.ui.confirm(
+			"Prune stale jj workspaces",
+			stripTerminalControls(
+				`Forget ${candidates.length} stale jj workspace${candidates.length === 1 ? "" : "s"}? Directories are never deleted; empty or already-abandoned working copy commits are unlinked.`,
+			),
+		))
+	) {
+		return;
+	}
+	const revalidated = await listJjWorkspaces(pi, ctx.cwd, ctx.signal);
+	for (const record of candidates) {
+		const current = revalidated.find((candidate) => candidate.name === record.name);
+		if (!current) {
+			throw new Error(`Workspace ${record.name} is no longer registered; run prune again.`);
+		}
+		if (!sameJjWorkspaceIdentity(record, current)) {
+			throw new Error(
+				`Workspace ${record.name} changed state after confirmation; run prune again.`,
+			);
+		}
+	}
+	await forgetJjWorkspaces(
+		pi,
+		ctx.cwd,
+		candidates.map((record) => record.name),
+		ctx.signal,
+	);
+	const after = await listJjWorkspaces(pi, ctx.cwd, ctx.signal);
+	const missing = candidates.filter((record) =>
+		after.some((candidate) => candidate.name === record.name),
+	);
+	if (missing.length > 0) {
+		throw new Error(
+			`jj forget returned success, but ${missing.map((record) => record.name).join(", ")} is still registered.`,
+		);
+	}
+	safeNotify(
+		ctx,
+		`Pruned ${candidates.length} stale jj workspace${candidates.length === 1 ? "" : "s"}.`.trimEnd(),
+		"info",
+	);
+}
+
 async function assertAdministrativeHistoryUnchanged(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
@@ -636,6 +1002,21 @@ async function revalidateWorktreeIdentity(
 	return latest;
 }
 
+async function revalidateJjWorkspaceIdentity(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	selected: JjWorkspaceRecord,
+): Promise<JjWorkspaceRecord> {
+	const latest = (await listJjWorkspaces(pi, ctx.cwd, ctx.signal)).find(
+		(record) => record.name === selected.name,
+	);
+	if (!latest) throw new Error(`Workspace ${selected.name} is no longer registered.`);
+	if (!sameJjWorkspaceIdentity(selected, latest)) {
+		throw new Error(`Workspace ${selected.name} changed identity; select it again.`);
+	}
+	return latest;
+}
+
 async function selectWorktree(
 	ctx: ExtensionCommandContext,
 	title: string,
@@ -667,6 +1048,49 @@ async function selectWorktree(
 		actions: {
 			choose: async ({ itemId }) => {
 				selected = records.find((record) => record.path === itemId);
+				return selected ? { kind: "close" } : { kind: "rejected" };
+			},
+		},
+	});
+	await runMenu(ctx, menu, {
+		getState: () => undefined,
+		signal,
+		isCurrent: () => !signal?.aborted,
+	});
+	return selected;
+}
+
+async function selectJjWorkspace(
+	ctx: ExtensionCommandContext,
+	title: string,
+	records: readonly JjWorkspaceRecord[],
+	currentPath: string,
+	signal?: AbortSignal,
+): Promise<JjWorkspaceRecord | undefined> {
+	if (records.length === 0) {
+		ctx.ui.notify("No eligible workspaces are available for this action.", "info");
+		return undefined;
+	}
+	const { defineMenu, runMenu } = await import("@narumitw/pi-tui-kit");
+	if (signal?.aborted || ctx.signal?.aborted) return undefined;
+	let selected: JjWorkspaceRecord | undefined;
+	const menu = defineMenu<undefined, "workspaces", "choose", ExtensionCommandContext>({
+		start: "workspaces",
+		screens: {
+			workspaces: () => ({
+				kind: "choice",
+				title,
+				items: records.map((record, index) => ({
+					id: record.name,
+					label: `${index + 1}. ${formatJjWorkspace(record, currentPath)}`,
+				})),
+				action: "choose",
+				hint: "close",
+			}),
+		},
+		actions: {
+			choose: async ({ itemId }) => {
+				selected = records.find((record) => record.name === itemId);
 				return selected ? { kind: "close" } : { kind: "rejected" };
 			},
 		},

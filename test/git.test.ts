@@ -126,9 +126,7 @@ test("formatWorktree strips terminal controls from Git-owned display values", ()
 });
 
 test("published git source loads with Node strip-only TypeScript", () => {
-	const moduleUrl = pathToFileURL(
-		join(process.cwd(), "packages", "pi-worktree", "src", "git.ts"),
-	).href;
+	const moduleUrl = pathToFileURL(join(process.cwd(), "src", "git.ts")).href;
 	const loaded = spawnSync(
 		process.execPath,
 		[

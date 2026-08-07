@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ExecResult } from "@earendil-works/pi-coding-agent";
-import { createMockContext, createMockPi } from "../../../test/support.js";
 import worktreeExtension from "../src/worktree.js";
+import { createMockContext, createMockPi } from "./support.js";
 
 const oid = "0123456789abcdef0123456789abcdef01234567";
 
