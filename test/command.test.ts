@@ -184,6 +184,41 @@ test("/worktree menu exposes only actionable flows", async () => {
 	]);
 });
 
+test("/workspace alias opens the same Git menu and registers no LLM tool", async () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-worktree-git-alias-"));
+	const main = join(root, "repo");
+	mkdirSync(main);
+	const mock = createMockPi();
+	(mock.rawPi as typeof mock.rawPi & { exec: ExecFunction }).exec = async (_command, args) => {
+		if (args[0] === "worktree") return result(porcelain([{ path: main, branch: "main" }]));
+		return result(`${main}\n`);
+	};
+	worktreeExtension(mock.pi);
+	assert.ok(mock.commands.get("workspace"));
+	assert.deepEqual(mock.tools, []);
+	let actions: string[] = [];
+	const context = createMockContext({
+		cwd: main,
+		hasUI: true,
+		mode: "tui",
+		select: async (_title: string, items: string[]) => {
+			actions = items;
+			return undefined;
+		},
+	});
+	try {
+		await mock.commands.get("workspace")?.handler("", context.ctx);
+		assert.deepEqual(actions, [
+			"Add worktree",
+			"Switch worktree",
+			"Remove worktree",
+			"Prune stale metadata",
+			"Configure worktree root",
+		]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
 test("interactive root configuration saves, applies to the next Add, and resets without subcommands", async () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-worktree-configure-"));
 	const main = join(root, "repo");

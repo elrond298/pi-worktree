@@ -59,6 +59,10 @@ Run the command without arguments:
 /worktree
 ```
 
+`/workspace` is an alias for `/worktree`; both names open the same menu. The
+command is VCS-aware: inside a Jujutsu repo it manages jj workspaces,
+everywhere else it manages Git worktrees.
+
 Choose one action (labels use *workspace* wording inside jj repositories):
 
 - **Add worktree / workspace** — for Git: enter a branch, optional start point, and optional path; confirm creation and optionally switch. For jj: enter an optional workspace name, an optional start point, and a path.

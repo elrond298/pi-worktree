@@ -90,32 +90,37 @@ export function registerWorktreeCommand(
 	settings: WorktreeSettingsRuntime,
 	getMenuOwner: () => WorktreeMenuOwner,
 ): void {
+	const handler = async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+		if (args.trim()) {
+			safeNotify(
+				ctx,
+				"This command does not accept arguments; run it without arguments to open the menu.",
+				"warning",
+			);
+			return;
+		}
+		if (!ctx.hasUI) {
+			safeNotify(ctx, "This command requires TUI or RPC mode.", "error");
+			return;
+		}
+
+		try {
+			if (detectVcs(ctx.cwd) === "jj") {
+				await jjMenuFlow(pi, ctx, settings, getMenuOwner);
+				return;
+			}
+			await gitMenuFlow(pi, ctx, settings, getMenuOwner);
+		} catch (error) {
+			safeNotify(ctx, formatError(error), "error");
+		}
+	};
 	pi.registerCommand("worktree", {
 		description: "Interactively manage Git worktrees and Jujutsu workspaces and their default root",
-		handler: async (args, ctx) => {
-			if (args.trim()) {
-				safeNotify(
-					ctx,
-					"/worktree does not accept arguments; run it without arguments to open the menu.",
-					"warning",
-				);
-				return;
-			}
-			if (!ctx.hasUI) {
-				safeNotify(ctx, "/worktree requires TUI or RPC mode.", "error");
-				return;
-			}
-
-			try {
-				if (detectVcs(ctx.cwd) === "jj") {
-					await jjMenuFlow(pi, ctx, settings, getMenuOwner);
-					return;
-				}
-				await gitMenuFlow(pi, ctx, settings, getMenuOwner);
-			} catch (error) {
-				safeNotify(ctx, formatError(error), "error");
-			}
-		},
+		handler,
+	});
+	pi.registerCommand("workspace", {
+		description: "Alias for /worktree: interactively manage Git worktrees and Jujutsu workspaces and their default root",
+		handler,
 	});
 }
 

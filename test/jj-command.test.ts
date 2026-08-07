@@ -80,6 +80,35 @@ function jjWorkspaceRoot(main: string): void {
 	mkdirSync(join(main, ".jj", "repo"), { recursive: true });
 }
 
+test("/workspace alias opens the same jj menu inside a jj workspace", async () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-worktree-jj-alias-"));
+	const main = join(root, "repo");
+	jjWorkspaceRoot(main);
+	const { mock } = fixturePi(main, [{ name: "default", path: main }]);
+	try {
+		let actions: string[] = [];
+		const context = createMockContext({
+			cwd: main,
+			hasUI: true,
+			mode: "tui",
+			select: async (_title: string, items: string[]) => {
+				actions = items;
+				return undefined;
+			},
+		});
+		await mock.commands.get("workspace")?.handler("", context.ctx);
+		assert.deepEqual(actions, [
+			"Add workspace",
+			"Switch workspace",
+			"Remove workspace",
+			"Prune stale workspaces",
+			"Configure workspace root",
+		]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("/worktree dispatches to the jj menu inside a jj workspace and lists jj actions", async () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-worktree-jj-menu-"));
 	const main = join(root, "repo");
