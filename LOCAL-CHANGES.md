@@ -100,3 +100,17 @@ Merge any **diverged** files by hand, e.g.:
 git show upstream/main:packages/pi-worktree/README.md > /tmp/upstream-README.md
 jj diff README.md
 ```
+
+## Change log
+
+Every local modification to this fork, newest first:
+
+| Date       | Change                                                                 | Commit    |
+|------------|------------------------------------------------------------------------|-----------|
+| 2026-08-14 | Sync: port upstream changes (status browser, searchable selectors, add-base provenance, vitest test split) | `84e1d500` |
+| 2026-08-07 | Document local fork modifications in LOCAL-CHANGES.md                  | `dc3f5b74` |
+| 2026-08-07 | Add upstream sync script (`scripts/sync-upstream.mjs`)                 | `f2eb4ee2` |
+| 2026-08-07 | Register `/workspace` as an alias for `/worktree`                      | `04e59e81` |
+| 2026-08-07 | Create missing parent directories before `jj workspace add`            | `8e17bdde` |
+| 2026-08-07 | Add Jujutsu workspace support (detection, list/add/switch/remove/prune) | `c2589c10` |
+| 2026-08-07 | Import `@narumitw/pi-worktree` from `narumiruna/pi-extensions`         | `93932acf` |
