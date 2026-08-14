@@ -3,13 +3,13 @@
 > [!IMPORTANT]
 > **⚠️ Local fork — this README is the upstream document with local modifications on top.**
 > This repository adds Jujutsu workspace support, a `/workspace` alias, and standalone tooling to the upstream [`narumiruna/pi-extensions`](https://github.com/narumiruna/pi-extensions) `packages/pi-worktree`.
-> See **[LOCAL-CHANGES.md](./LOCAL-CHANGES.md)** for the complete list of local changes and how upstream sync handles them.
+> See **[LOCAL_CHANGES.md](./LOCAL_CHANGES.md)** for the complete list of local changes and how upstream sync handles them.
 
 ## Upstream
 
 - **Upstream repository:** <https://github.com/narumiruna/pi-extensions> (path `packages/pi-worktree`, branch `main`)
 - **This fork:** hosted on Gitea at `git@git.thechance.top:ck/pi-worktree.git`
-- **Local modifications:** tracked in [LOCAL-CHANGES.md](./LOCAL-CHANGES.md)
+- **Local modifications:** tracked in [LOCAL_CHANGES.md](./LOCAL_CHANGES.md)
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-worktree)](https://www.npmjs.com/package/@narumitw/pi-worktree) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 `@narumitw/pi-worktree` adds one interactive `/worktree` command for common Git worktree and Jujutsu workspace operations and Pi workspace switching.
