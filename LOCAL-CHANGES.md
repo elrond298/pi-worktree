@@ -13,7 +13,9 @@ here.
 - Path upstream: `packages/pi-worktree`
 - Default ref: `main` (override with `UPSTREAM_REF`)
 - Git remote: `upstream` (fetch-only; origin is this fork)
-
+- Last synced upstream commit: `a5ee05de` (2026-08; brought the worktree status
+  browser, searchable selectors, add-base provenance, and the vitest test
+  split)
 ## Summary of local modifications
 
 ### 1. Jujutsu workspace support (the main addition)
@@ -31,6 +33,12 @@ workspace support, making `/worktree` VCS-aware:
 - `test/command.test.ts`, `test/git.test.ts`,
   `test/remove-ignored-command.test.ts`, `test/session.test.ts` — updated for
   the jj-aware flows.
+- All upstream tests are adapted on every sync from the monorepo's vitest
+  harness to this fork's standalone `node:test` harness: `vitest` imports
+  become `node:test` and monorepo-relative `../../../test/support.js` imports
+  become `./support.js` (currently applied to `test/add-command.test.ts`,
+  `test/settings-command.test.ts`, `test/status-command.test.ts`,
+  `test/status.test.ts`, `test/git.integration.test.ts`, `test/settings.test.ts`).
 
 ### 2. `/workspace` alias
 

@@ -26,6 +26,7 @@ import {
 	worktreeAdministrativeDirectory,
 	worktreeInventory,
 } from "../src/git.js";
+import { loadWorktreeStatusCards } from "../src/status.js";
 
 const pi = {
 	async exec(command: string, args: string[], options?: { cwd?: string }): Promise<ExecResult> {
@@ -88,6 +89,42 @@ test("Git service creates a nested-root worktree, inventories it, and removes it
 		await addWorktree(pi, main, { path: linked, branch: "feature/test" });
 		assert.equal((await listWorktrees(pi, main))[1]?.branch, "feature/test");
 		await removeWorktree(pi, main, linked);
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+});
+
+test("worktree status cards report clean and changed real linked worktrees from exact HEAD", async () => {
+	const temporary = realpathSync(mkdtempSync(join(tmpdir(), "pi-worktree-status-git-")));
+	const main = join(temporary, "repo");
+	const linked = join(temporary, "repo-feature");
+	try {
+		git(temporary, ["init", "--initial-branch=main", main]);
+		git(main, ["config", "user.name", "Pi Worktree Test"]);
+		git(main, ["config", "user.email", "pi-worktree@example.invalid"]);
+		writeFileSync(join(main, "README.md"), "main\n");
+		git(main, ["add", "README.md"]);
+		git(main, ["commit", "-m", "initial"]);
+		git(main, ["worktree", "add", "-b", "feature", linked, "HEAD"]);
+
+		const records = await listWorktrees(pi, main);
+		const clean = await loadWorktreeStatusCards(pi, records, main);
+		assert.equal(clean.length, 2);
+		assert.ok(clean.every((card) => /clean/i.test(card.statusText)));
+		assert.ok(
+			clean.every((card) => card.details.some((line) => /Last commit:.*initial/i.test(line))),
+		);
+
+		writeFileSync(join(linked, "staged.txt"), "staged\n");
+		git(linked, ["add", "staged.txt"]);
+		writeFileSync(join(linked, "README.md"), "modified\n");
+		writeFileSync(join(linked, "draft.txt"), "untracked\n");
+		const changed = await loadWorktreeStatusCards(pi, records, main);
+		const feature = changed.find((card) => card.id === linked);
+		assert.ok(feature);
+		assert.match(feature.statusText, /1 staged.*1 unstaged.*1 untracked/i);
+		const head = git(linked, ["rev-parse", "HEAD"]).stdout.trim();
+		assert.ok(feature.details.some((line) => line === `Snapshot HEAD: ${head}`));
 	} finally {
 		rmSync(temporary, { recursive: true, force: true });
 	}

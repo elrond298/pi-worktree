@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-worktree",
-	"version": "0.49.3",
+	"version": "0.51.0",
 	"description": "Pi extension for safe interactive Git worktree and Jujutsu workspace management and workspace switching.",
 	"type": "module",
 	"license": "MIT",
@@ -39,8 +39,8 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.7",
-		"@earendil-works/pi-coding-agent": "0.84.0",
-		"@earendil-works/pi-tui": "0.84.0",
+		"@earendil-works/pi-coding-agent": "0.84.1",
+		"@earendil-works/pi-tui": "0.84.1",
 		"@types/node": "26.1.2",
 		"typescript": "7.0.2"
 	},
@@ -50,6 +50,6 @@
 		"directory": "packages/pi-worktree"
 	},
 	"dependencies": {
-		"@narumitw/pi-tui-kit": "^0.49.1"
+		"@narumitw/pi-tui-kit": "^0.54.0"
 	}
 }

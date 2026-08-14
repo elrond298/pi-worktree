@@ -5,6 +5,7 @@
 > This repository adds Jujutsu workspace support, a `/workspace` alias, and standalone tooling to the upstream [`narumiruna/pi-extensions`](https://github.com/narumiruna/pi-extensions) `packages/pi-worktree`.
 > See **[LOCAL-CHANGES.md](./LOCAL-CHANGES.md)** for the complete list of local changes and how upstream sync handles them.
 
+[![npm](https://img.shields.io/npm/v/@narumitw/pi-worktree)](https://www.npmjs.com/package/@narumitw/pi-worktree) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 `@narumitw/pi-worktree` adds one interactive `/worktree` command for common Git worktree and Jujutsu workspace operations and Pi workspace switching.
 
@@ -14,7 +15,9 @@ Pi cannot change its parent process working directory with `cd`. This extension 
 
 - One command for both VCS families: inside a Jujutsu repo (`jj`), `/worktree` manages jj workspaces; everywhere else it manages Git worktrees.
 - Shows compact main, linked, current, detached, locked, and prunable state in worktree selectors.
+- Provides an on-demand, searchable status snapshot with staged, unstaged, untracked, conflict, upstream, and last-commit details.
 - Creates a new branch worktree or attaches an existing unoccupied local branch.
+- Previews the exact local base source and full commit OID before creation.
 - Rejects occupied targets and unresolvable symbolic-link ancestors before Git can create a branch.
 - Suggests `~/.worktrees/<main-worktree-name>/<branch>` by default and lets the user configure the root interactively.
 - Optionally switches Pi into a newly created worktree while continuing the current conversation.
@@ -90,22 +93,33 @@ everywhere else it manages Git worktrees.
 
 Choose one action (labels use *workspace* wording inside jj repositories):
 
-- **Add worktree / workspace** — for Git: enter a branch, optional start point, and optional path; confirm creation and optionally switch. For jj: enter an optional workspace name, an optional start point, and a path.
-- **Switch worktree / workspace** — select another existing worktree or workspace and continue this Pi conversation there.
-- **Remove worktree / workspace** — Git: remove a linked worktree without deleting its branch; ignored-only data is listed for explicit confirmation. jj: forget a clean workspace; its directory is retained.
-- **Prune stale metadata / workspaces** — Git: inspect `git worktree prune --dry-run --verbose`, then optionally prune. jj: preview stale workspaces (missing roots or abandoned working copies), then forget them together.
+- **Worktree status** — browse a local snapshot for every registered worktree without fetching remotes.
+- **Add worktree / workspace** — for Git: enter a branch, optional start point, and optional path; review exact base provenance, confirm creation, and optionally switch. For jj: enter an optional workspace name, an optional start point, and a path.
+- **Switch worktree / workspace** — search for another existing worktree or workspace by displayed path, branch (or name), or HEAD and continue this Pi conversation there.
+- **Remove worktree / workspace** — Git: search for a linked worktree by displayed path, branch, or HEAD, then remove it without deleting its branch; ignored-only data is listed for explicit confirmation. jj: forget a clean workspace; its directory is retained.
+- **Prune stale metadata / workspaces** — Git: inspect `git worktree prune --dry-run --verbose`, then optionally run the matching prune. jj: preview stale workspaces (missing roots or abandoned working copies), then forget them together.
 - **Configure worktree root** — set a machine-local default root or submit a blank value to restore `~/.worktrees`.
 
 The standard root menu shows the registered count, current path, effective worktree root, its source,
 and any settings warning. Escape closes it. `/worktree` intentionally does not accept text
 subcommands or expose argument autocomplete. Every change is initiated and confirmed through TUI or
 RPC dialogs; print and JSON modes reject the command observably. Operation-specific branch/path
-inputs, worktree identity selectors, preflight previews, and destructive confirmations remain
+inputs, searchable worktree identity selectors, preflight previews, and destructive confirmations remain
 extension-owned because they carry Git safety and commit-aware revalidation.
+
+The status browser runs only when selected and has no watcher, timer, persistent cache, or network
+fetch. Each card shows textual current/main/detached state, full snapshot HEAD, aggregate working-tree
+counts, configured upstream ahead/behind, and the last commit timestamp and subject. A missing
+upstream is reported as **not configured**; it is not treated as proof that no commits are unpushed.
+Bare, missing, prunable, or individually failing worktrees remain visible with an unavailable reason.
+The snapshot is informational and can become stale immediately, so Remove still performs its stricter
+inventory and identity checks.
 
 ## 🌿 Add defaults
 
 For a new branch, the current symbolic branch is the default start point. If Pi is running from detached HEAD, the command requires an explicit commit-ish. Git must resolve the start point to exactly one commit.
+
+Before mutation, Add identifies whether the branch is new or existing and displays the provenance as the current branch, an explicit commit-ish, or an existing local branch together with its full resolved OID and target path. New branches are created from that approved OID even if the source ref later moves. Existing branches are checked again immediately before mutation and the created worktree HEAD is verified afterward. Git has no atomic compare-and-add operation for attaching an existing branch, so a post-add mismatch is retained for inspection rather than rolled back.
 
 The default root is `~/.worktrees`, where `~` is Node's platform home directory. Suggestions use the registered main worktree's directory name, not the current linked-worktree cwd:
 
@@ -127,6 +141,7 @@ The MVP does not expose `--force`, `-B`, `--detach`, `--orphan`, or lock options
 In a jj repository the Add flow asks for an optional workspace name, an optional start point, and the destination path. A blank name lets jj derive it from the destination directory name. A blank start point uses jj's native default: the new workspace's working copy commit is created on top of the parent of the current change, so uncommitted work stays in the current workspace. A provided start point must resolve to exactly one commit, mirroring the Git flow's single-commit rule. The suggestion is `~/.worktrees/<repo-root-workspace-name>/<name>` (or `/workspace` when no name was given).
 
 `jj workspace add` requires the destination's parent directory to already exist (it fails with "Cannot access ..." otherwise), so the extension creates the parent chain before invoking jj, matching `git worktree add`'s implicit directory creation. The extension never deletes a directory it did not create: `jj workspace add` may accept an existing empty directory, but this extension still requires the target to not exist, matching the Git flow's stricter preflight.
+
 ## ⚙️ Worktree root settings
 
 The machine-local user settings file is:
@@ -174,7 +189,8 @@ A successfully created Git worktree is never rolled back merely because Pi sessi
 - Removal never deletes a branch and never uses `--force`.
 - Remove invokes only argv-based `git worktree remove <path>`; production runtime never invokes a shell, `rm`, `rm -rf`, or a Node filesystem directory-deletion API for worktrees.
 - Prune always runs `git worktree prune --dry-run --verbose` before confirmation, inspects candidates omitted from porcelain, rechecks the exact preview and recovery-risk set after confirmation, and uses Git's default expiry. Remove likewise rechecks worktree identity, inventory, administrative path, and the approved recovery-risk set before mutation.
-- The extension does not commit, push, rebase, repair, move, lock, or unlock worktrees.
+- The status browser uses only local Git state and never fetches a remote; its cards never authorize Remove or Prune.
+- The extension does not commit, push, fetch, rebase, repair, move, lock, or unlock worktrees.
 
 ### Jujutsu workspace boundaries
 
@@ -186,7 +202,8 @@ A successfully created Git worktree is never rolled back merely because Pi sessi
 - All reads use `--ignore-working-copy` so listing never snapshots the current working copy; only Add performs a normal jj operation that may snapshot it.
 - The extension never invokes a shell and never interpolates user input into jj argv.
 
-Use Git or jj directly when you intentionally need force removal, branch deletion, custom prune expiry, detach/orphan creation, move, repair, lock, or unlock behavior.
+Use Git or jj directly when you intentionally need force removal, branch deletion, custom prune expiry, detach/orphan creation, move, repair, lock, unlock, or remote refresh behavior.
+
 ## Requirements and limits
 
 - Git worktree mode: Git must be installed and the current Pi cwd must be inside a non-bare Git worktree.
@@ -206,9 +223,12 @@ packages/pi-worktree/
 │   ├── jj.ts
 │   ├── session.ts
 │   ├── settings.ts
+│   ├── status.ts
 │   └── worktree.ts
 ├── test/
+│   ├── add-command.test.ts
 │   ├── command.test.ts
+│   ├── command-test-support.ts
 │   ├── git.integration.test.ts
 │   ├── git.test.ts
 │   ├── jj-command.test.ts
@@ -216,7 +236,10 @@ packages/pi-worktree/
 │   ├── jj.test.ts
 │   ├── remove-ignored-command.test.ts
 │   ├── session.test.ts
-│   └── settings.test.ts
+│   ├── settings-command.test.ts
+│   ├── settings.test.ts
+│   ├── status-command.test.ts
+│   └── status.test.ts
 ├── package.json
 ├── README.md
 ├── LICENSE
