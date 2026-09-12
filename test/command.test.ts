@@ -546,7 +546,7 @@ test("switch selection searches branch and path while preserving raw worktree id
 	const root = mkdtempSync(join(tmpdir(), "pi-worktree-search-choice-"));
 	const main = join(root, "repo");
 	const first = join(root, "worktrees", "frontend");
-	const second = join(root, "worktrees", "backend");
+	const second = join(root, "worktrees", "zzzzzzzz");
 	mkdirSync(main, { recursive: true });
 	mkdirSync(first, { recursive: true });
 	mkdirSync(second, { recursive: true });
@@ -557,14 +557,14 @@ test("switch selection searches branch and path while preserving raw worktree id
 				porcelain([
 					{ path: main, branch: "main" },
 					{ path: first, branch: "feature/ui" },
-					{ path: second, branch: "fix/api" },
+					{ path: second, branch: "yyyyyyyy" },
 				]),
 			);
 		}
 		return result(`${main}\n`);
 	};
 	worktreeExtension(mock.pi);
-	const tui = createTuiHarness({ width: 72, rows: 20 });
+	const tui = createTuiHarness({ width: 160, rows: 20 });
 	let customCalls = 0;
 	let switchedCwd = "";
 	let filteredFrame = "";
@@ -582,7 +582,7 @@ test("switch selection searches branch and path while preserving raw worktree id
 				tui.press("tui.select.down");
 				tui.press("tui.select.confirm");
 			} else {
-				tui.type("backend fix/api");
+				tui.type("zzzzzzzz yyyyyyyy");
 				filteredFrame = tui.render().join("\n");
 				tui.press("tui.select.confirm");
 				await tui.waitForPending();
@@ -602,7 +602,7 @@ test("switch selection searches branch and path while preserving raw worktree id
 	try {
 		await mock.commands.get("worktree")?.handler("", context.ctx);
 		assert.equal(customCalls, 2);
-		assert.match(filteredFrame, /→ 2\..*backend/u);
+		assert.match(filteredFrame, /→ 2\..*zzzzzzzz/u);
 		assert.doesNotMatch(filteredFrame, /frontend/u);
 		assert.equal(switchedCwd, second, JSON.stringify(context.notifications));
 	} finally {

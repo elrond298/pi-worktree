@@ -13,9 +13,15 @@ here.
 - Path upstream: `packages/pi-worktree`
 - Default ref: `main` (override with `UPSTREAM_REF`)
 - Git remote: `upstream` (fetch-only; origin is this fork)
-- Last synced upstream commit: `a5ee05de` (2026-08; brought the worktree status
-  browser, searchable selectors, add-base provenance, and the vitest test
-  split)
+- Last synced upstream commit: `2e9b92f8` (2026-09; brought the Windows-safe
+  session-cwd normalization fix, the search-selector test hardening, the
+  submodule integration test rewrite (describe + before/after hooks), and the
+  rewritten README. Upstream's new `scripts/build-runtime.mjs` +
+  `test/build-runtime.test.ts` (0.51.3 source-mapped Jiti runtime) are
+  intentionally not ported: this fork loads `src/index.ts` directly and has no
+  build step. Upstream 0.51.4-0.51.6 also switched to Biome 2.5.13 formatting
+  (spaces); imported files are reformatted back to this fork's style after
+  every sync.)
 ## Summary of local modifications
 
 ### 1. Jujutsu workspace support (the main addition)
